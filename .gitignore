@@ -8,3 +8,5 @@ build/
 yanagishima.iml
 data/yanagishima.db
 yanagishima.log
+HunLiPerstoUi.iml
+*.tsv
