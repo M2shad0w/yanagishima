@@ -9,8 +9,7 @@
     <link href="css/jquery-ui.min.css" rel="stylesheet">
     <link href="css/codemirror.css" rel="stylesheet">
     <link href="css/show-hint.css" rel="stylesheet">
-    <link href="css/semantic.min.css" rel="stylesheet" />
-    <link href="css/peach.css" rel="stylesheet" />
+    <link href="css/font-awesome.min.css" rel="stylesheet">
     <script src="js/lib/jquery.js"></script>
     <script src="js/lib/jquery-ui.min.js"></script>
     <script src="js/lib/bootstrap.min.js"></script>
@@ -23,6 +22,7 @@
     <script src="js/lib/show-hint.js"></script>
     <script src="js/lib/sql-hint.js"></script>
     <script src="js/lib/sql.js"></script>
+    <script src="js/lib/clipboard.min.js"></script>
     <script>
         $(function(){
             follow_current_uri();
@@ -49,7 +49,7 @@
 
 <table class="table">
     <tr>
-        <td>
+        <td width="20%">
             <ul id="tableMenu" class="contextMenu">
                 <li><a href="#select">SELECT ... LIMIT 100</a></li>
                 <li><a href="#select_no_execute">SELECT ... LIMIT 100(no execute)</a></li>
@@ -80,7 +80,8 @@
             </script>
 
         </td>
-        <td>
+        <td width="80%>
+
             <form id="query-form" class="form-horizontal">
                 <div class="form-group">
                     <div class="col-sm-10">
@@ -97,8 +98,39 @@
                                 window.editor = CodeMirror.fromTextArea(document.getElementById('query'), {
                                     mode: "text/x-presto",
                                     lineNumbers: true,
-                                    extraKeys: {"Ctrl-Space": "autocomplete"},
+                                    extraKeys: {"Ctrl-Space": "autocomplete",
+                                        "Cmd-Enter": function(){
+                                            $("#query-submit").click();
+                                        }
+                                    },
                                 });
+
+                                new Clipboard('.clip-btn-native', {
+                                    text: function(trigger) {
+                                        return getCodeMirrorNative("#query").getDoc().getValue();
+                                    }
+                                });
+
+                                function getCodeMirrorNative(target) {
+                                    var _target = target;
+                                    if (typeof _target === 'string') {
+                                        _target = document.querySelector(_target);
+                                    }
+                                    if (_target === null || !_target.tagName === undefined) {
+                                        throw new Error('Element does not reference a CodeMirror instance.');
+                                    }
+
+                                    if (_target.className.indexOf('CodeMirror') > -1) {
+                                        return _target.CodeMirror;
+                                    }
+
+                                    if (_target.tagName === 'TEXTAREA') {
+                                        return _target.nextSibling.CodeMirror;
+                                    }
+
+                                    return null;
+                                };
+
                             });
                         </script>
                     </div>
@@ -123,11 +155,15 @@
                             format
                         </button>
                         <button type="button" id="tsv-download" onclick="tsv_download()" class="btn btn-default"
-                                disabled="disabled">download
+                                disabled="disabled">TSV download
+                        </button>
+                        <button type="button" id="csv-download" onclick="csv_download()" class="btn btn-default"
+                                disabled="disabled">CSV(Shift_JIS) download
                         </button>
                         <button type="button" id="send-ikasan" onclick="send_ikasan()" class="btn btn-default"
                                 disabled="disabled">share
                         </button>
+                        <button class="btn btn-default clip-btn-native">Copy to clipboard</button>
                     </div>
                 </div>
             </form>
@@ -158,17 +194,25 @@
                 });
             </script>
 
-            <h4>all query executions/your query histories/your query bookmarks/yanagishima query histories</h4>
+            <h4>all queries/done queries/your query histories/your query bookmarks/yanagishima query histories</h4>
 
             <div id="tabs">
                 <ul>
-                    <li><a href="#query-executions-tab">all query executions</a></li>
+                    <li><a href="#all-queries-tab">all queries</a></li>
+                    <li><a href="#done-queries-tab">done queries</a></li>
                     <li><a href="#query-histories-tab">your query histories</a></li>
                     <li><a href="#query-bookmarks-tab">your query bookmarks</a></li>
                     <li><a href="#yanagishima-query-histories-tab">yanagishima query histories</a></li>
                 </ul>
 
-                <div id="query-executions-tab">
+                <div id="all-queries-tab">
+
+                    <div class="checkbox">
+                        <label>
+                            <input id="auto-refresh" type="checkbox" checked/> auto refresh
+                        </label>
+                    </div>
+
                     <div>
                         <table id="running" class="table table-striped">
                             <colgroup>
@@ -202,7 +246,76 @@
                             <tbody></tbody>
                         </table>
 
-                        <table id="done" class="table table-striped">
+                        <table id="first_tab_done" class="table table-striped">
+                            <colgroup>
+                                <col width="90px">
+                                <col width="80px">
+                                <col width="auto">
+                                <col width="80px">
+                                <col width="80px">
+                                <col width="90px">
+                                <col width="80px">
+                                <col width="60px">
+                                <col width="60px">
+                                <col width="60px">
+                            </colgroup>
+                            <thead>
+                            <tr>
+                                <th>Id</th>
+                                <th>Elapsed</th>
+                                <th>Query</th>
+                                <th>Source</th>
+                                <th>User</th>
+                                <th>State</th>
+                                <th>Error</th>
+                                <th>Done</th>
+                                <th>Total</th>
+                                <th>Completion</th>
+                            </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="done-queries-tab">
+                    <div>
+                        <script>
+                            redraw_done_queryies();
+                        </script>
+                        <div>
+                            <i class="fa fa-refresh" aria-hidden="true" onclick="redraw_done_queryies()"></i>
+                        </div>
+                        <div>
+                            query:<input type="text" size="20" id="search_done_queries_by_query">
+                        </div>
+                        <script>
+                            $('#search_done_queries_by_query').keyup(function(){
+                                if ($(this).val()) {
+                                    $('#done tr').hide();
+                                    $('#done tr td:nth-child(3):contains(' + this.value + ')').parent().show();
+                                } else {
+                                    $('#done tr').show();
+                                }
+                            });
+                        </script>
+                        <div>
+                            or
+                        </div>
+                        <div>
+                            user:<input type="text" size="20" id="search_done_queries_by_user">
+                        </div>
+                        <script>
+                            $('#search_done_queries_by_user').keyup(function(){
+                                if ($(this).val()) {
+                                    $('#done tr').hide();
+                                    $('#done tr td:nth-child(5):contains(' + this.value + ')').parent().show();
+                                } else {
+                                    $('#done tr').show();
+                                }
+                            });
+                        </script>
+                        <table id="second_tab_done" class="table table-striped">
                             <colgroup>
                                 <col width="90px">
                                 <col width="80px">
@@ -240,7 +353,7 @@
                         $('#search_query_histories').keyup(function(){
                             if ($(this).val()) {
                                 $('#query-histories tr').hide();
-                                $('#query-histories tr td:nth-child(4):contains(' + this.value + ')').parent().show();
+                                $('#query-histories tr td:nth-child(5):contains(' + this.value + ')').parent().show();
                             } else {
                                 $('#query-histories tr').show();
                             }
@@ -275,17 +388,13 @@
                 </div>
 
                 <div id="yanagishima-query-histories-tab">
-                    <input type="text" size="20" id="search_yanagishima_query_histories">
-                    <script>
-                        $('#search_yanagishima_query_histories').keyup(function(){
-                            if ($(this).val()) {
-                                $('#yanagishima-query-histories tr').hide();
-                                $('#yanagishima-query-histories tr td:nth-child(2):contains(' + this.value + ')').parent().show();
-                            } else {
-                                $('#yanagishima-query-histories tr').show();
-                            }
-                        });
-                    </script>
+                    <form class="form-inline">
+                        <div class="form-group">
+                            Query
+                            <input type="text" class="form-control" id="yanagishima_query" size="50"/>
+                            <button type="button" class="btn btn-default" onclick="search_yanagishima_query_histories()">search</button>
+                        </div>
+                    </form>
                     <div>
                         <table class="table table-bordered" id="yanagishima-query-histories"></table>
                     </div>
@@ -327,11 +436,30 @@
 
 <script>
 
-    setInterval(function () {
-        redraw();
-    }, 1000);
+    var timer;
+    function startTimer() {
+        timer = setInterval(function () {
+            redraw();
+        }, 1000);
+    }
+
+    startTimer();
+
+    function stopTimer() {
+        clearInterval(timer);
+    }
 
     redraw();
+
+    $('#auto-refresh').on('change', function(){
+        if ($(this).is(':checked')) {
+            console.log("start");
+            startTimer();
+        } else {
+            console.log("stop");
+            stopTimer();
+        }
+    });
 
 </script>
 

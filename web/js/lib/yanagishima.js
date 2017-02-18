@@ -13,7 +13,7 @@ var yanagishima_tree = (function () {
                 for (var i = 0; i < results.length; i++) {
                     var catalog = results[i][0];
                     var rootNode = $("#tree").dynatree("getRoot");
-                    rootNode.addChild({title: catalog, key: catalog, isFolder: true, isLazy: true, catalog: catalog});
+                    rootNode.addChild({title: catalog, key: catalog, isFolder: false, isLazy: true, catalog: catalog, icon: false, addClass: "fa fa-server"});
                 }
             }
         },
@@ -22,7 +22,7 @@ var yanagishima_tree = (function () {
             if (node.data.catalog) {
                 param = "show schemas from " + node.data.key;
             } else if (node.parent.data.catalog) {
-                param = "show tables from " + node.parent.data.catalog + "." + node.data.key;
+                param = "SELECT table_catalog, table_schema, table_name, table_type FROM " + node.parent.data.catalog + ".information_schema.tables WHERE table_schema='" + node.data.key + "'";
             } else if (node.parent.data.schema) {
                 param = "show columns from " + node.parent.parent.data.catalog + "." + node.parent.data.schema + "." + node.data.key;
             }
@@ -41,12 +41,22 @@ var yanagishima_tree = (function () {
                 if (headers == "Schema") {
                     for (var i = 0; i < results.length; i++) {
                         var result = results[i][0];
-                        node.addChild({title: result, key: result, isLazy: true, isFolder: true, schema: result});
+                        node.addChild({title: result, key: result, isLazy: true, isFolder: false, schema: result, icon: false, addClass: "fa fa-database"});
                     }
-                } else if (headers == "Table") {
+                } else if (headers[0] == "table_catalog") {
                     for (var i = 0; i < results.length; i++) {
-                        var result = results[i][0];
-                        node.addChild({title: result, key: result, isLazy: true, isFolder: true, table: result});
+                        var table_catalog = results[i][0];
+                        var table_schema = results[i][1];
+                        var table_name = results[i][2];
+                        var table_type = results[i][3];
+                        if(table_type === "BASE TABLE") {
+                            node.addChild({title: table_name, key: table_name, isLazy: true, isFolder: false, table: table_name, icon: false, addClass: "fa fa-table"});
+                        } else if(table_type === "VIEW") {
+                            node.addChild({title: table_name, key: table_name, isLazy: true, isFolder: false, table: table_name, icon: false, addClass: "fa fa-eye"});
+                        } else {
+                            console.log(table_type);
+                            node.addChild({title: table_name, key: table_name, isLazy: true, isFolder: true, table: table_name});
+                        }
                     }
                 } else {
                     for (var i = 0; i < results.length; i++) {
@@ -178,6 +188,7 @@ var handle_execute = (function () {
     $("#query-clear").attr("disabled", "disabled");
     $("#query-format").attr("disabled", "disabled");
     $("#tsv-download").attr("disabled", "disabled");
+    $("#csv-download").attr("disabled", "disabled");
     $("#send-ikasan").attr("disabled", "disabled");
     $("#query-results-div").remove();
     var div = $("<div></div>", {style: "height:500px; overflow:auto;", id: "query-results-div"});
@@ -216,7 +227,7 @@ var handle_execute = (function () {
                 $("#warn-msg").slideDown("fast");
             }
             update_history_by_query(data.queryid);
-            push_query(query);
+            push_query(query, data.queryid);
             $("#query-histories").empty();
             $("#yanagishima-query-histories").empty();
             update_query_histories_area();
@@ -309,6 +320,7 @@ var handle_execute = (function () {
                 create_table("#query-results", headers, rows, show_ddl_flag);
             }
             $("#tsv-download").removeAttr("disabled");
+            $("#csv-download").removeAttr("disabled");
             $("#send-ikasan").removeAttr("disabled");
         }
     };
@@ -367,10 +379,12 @@ var handle_explain_distributed = (function () {
 
 var handle_explain_analyze = (function () {
     explain("analyze");
+    explain("analyze");
 });
 
 var explain = (function (kind) {
     $("#tsv-download").attr("disabled", "disabled");
+    $("#csv-download").attr("disabled", "disabled");
     $("#send-ikasan").attr("disabled", "disabled");
     window.editor.removeLineClass(window.editor.listSelections()[0].head.line, 'wrap', 'CodeMirror-errorline-background');
     $("#query-results").empty();
@@ -472,6 +486,19 @@ var tsv_download = (function () {
     link.click();
 });
 
+var csv_download = (function () {
+    var param = document.location.search.substring(1);
+    if (param === null) {
+        return;
+    }
+    var element = param.split('=');
+    var queryid = element[1];
+
+    var link = document.createElement('a')
+    link.href = "/csvdownload?queryid=" + queryid;
+    link.click();
+});
+
 var send_ikasan = (function () {
     var param = document.location.search.substring(1);
     if (param === null) {
@@ -491,11 +518,15 @@ var send_ikasan = (function () {
 
 });
 
-var push_query = (function (query) {
+var push_query = (function (query, queryid) {
     if (!window.localStorage) return;
     var list = query_histories();
     list.unshift(query);
     set_query_histories(list.slice(0, 1000000));
+
+    var yanagishima_queryid_list = your_yanagishima_queryid_histories();
+    yanagishima_queryid_list.unshift(queryid);
+    set_your_yanagishima_queryid_histories(yanagishima_queryid_list.slice(0, 1000000));
 });
 
 var query_histories = (function () {
@@ -517,11 +548,44 @@ var set_query_histories = (function (list) {
     window.localStorage.query_histories = JSON.stringify(list);
 });
 
+var your_yanagishima_queryid_histories = (function () {
+    if (!window.localStorage) return [];
+    var list = [];
+    try {
+        var listString = window.localStorage.your_yanagishima_queryid_histories;
+        if (listString && listString.length > 0)
+            list = JSON.parse(listString);
+    } catch (e) {
+        set_your_yanagishima_queryid_histories([]);
+        list = [];
+    }
+    return list;
+});
+
+var set_your_yanagishima_queryid_histories = (function (list) {
+    if (!window.localStorage) return;
+    window.localStorage.your_yanagishima_queryid_histories = JSON.stringify(list);
+});
+
 var update_query_histories_area = (function () {
     var tbody = document.createElement("tbody");
     var query_list = query_histories();
+    var yanagishima_queryid_list = your_yanagishima_queryid_histories();
     for (var i = 0; i < query_list.length; i++) {
         var tr = document.createElement("tr");
+
+        var td = document.createElement("td");
+        var queryid = yanagishima_queryid_list[i];
+        if(queryid) {
+            var link = document.createElement('a')
+            link.href = "?queryid=" + queryid;
+            link.text = queryid;
+            link.style = "color: #337ab7";
+            link.target = "_blank";
+            $(td).append(link);
+        }
+        $(tr).append(td);
+
         var copy_button = document.createElement("button");
         $(copy_button).attr("type", "button");
         $(copy_button).attr("class", "btn btn-success");
@@ -616,6 +680,7 @@ var update_yanagishima_query_histories_area = (function () {
                         link.href = "?queryid=" + columns[j];
                         link.text = columns[j];
                         link.style = "color: #337ab7";
+                        link.target = "_blank";
                         $(td).append(link);
                     } else {
                         $(td).text(columns[j]);
@@ -628,6 +693,54 @@ var update_yanagishima_query_histories_area = (function () {
         }
     };
     $.get("/queryHistory", requestData, successHandler, "json");
+});
+
+var search_yanagishima_query_histories = (function () {
+
+    var requestData = {
+        "query":  $("#yanagishima_query").val()
+    };
+
+    var successHandler = function (data) {
+        if (data.error) {
+            $("#error-msg").text(data.error);
+            $("#error-msg").slideDown("fast");
+        } else {
+            $("#yanagishima-query-histories").empty();
+            var headers = data.headers;
+            var rows = data.results;
+            var thead = document.createElement("thead");
+            var tr = document.createElement("tr");
+            for (var i = 0; i < headers.length; i++) {
+                var th = document.createElement("th");
+                $(th).text(headers[i]);
+                $(tr).append(th);
+            }
+            $(thead).append(tr);
+            $("#yanagishima-query-histories").append(thead);
+            var tbody = document.createElement("tbody");
+            for (var i = 0; i < rows.length; i++) {
+                var tr = document.createElement("tr");
+                var columns = rows[i];
+                for (var j = 0; j < columns.length; j++) {
+                    var td = document.createElement("td");
+                    if(j==0) {
+                        var link = document.createElement('a')
+                        link.href = "?queryid=" + columns[j];
+                        link.text = columns[j];
+                        link.style = "color: #337ab7";
+                        $(td).append(link);
+                    } else {
+                        $(td).text(columns[j]);
+                    }
+                    $(tr).append(td);
+                }
+                $(tbody).append(tr);
+            }
+            $("#yanagishima-query-histories").append(tbody);
+        }
+    };
+    $.post("/yanagishimaQueryHistory", requestData, successHandler, "json");
 });
 
 var add_bookmark = (function (event) {
@@ -676,6 +789,9 @@ var delete_query = (function (event) {
     var query_list = query_histories();
     query_list.splice(event.data.index, 1);
     set_query_histories(query_list);
+    var yanagishima_queryid_list = your_yanagishima_queryid_histories();
+    yanagishima_queryid_list.splice(event.data.index, 1);
+    set_your_yanagishima_queryid_histories(yanagishima_queryid_list);
     $("#query-histories").empty();
     update_query_histories_area();
 });
@@ -722,14 +838,24 @@ var redraw = (function () {
             runningQueries = queries.filter(function (query) {
                 return query.state != 'FINISHED' && query.state != 'FAILED' && query.state != 'CANCELED';
             });
-
             doneQueries = queries.filter(function (query) {
                 return query.state == 'FINISHED' || query.state == 'FAILED' || query.state == 'CANCELED';
             });
         }
-
         renderRunningQueries(runningQueries);
-        renderDoneQueries(doneQueries);
+        renderDoneQueries(doneQueries, "#first_tab_done");
+    });
+});
+
+var redraw_done_queryies = (function () {
+    d3.json('/query', function (queries) {
+        var doneQueries = [];
+        if (queries) {
+            doneQueries = queries.filter(function (query) {
+                return query.state == 'FINISHED' || query.state == 'FAILED' || query.state == 'CANCELED';
+            });
+        }
+        renderDoneQueries(doneQueries, "#second_tab_done");
     });
 });
 
@@ -769,6 +895,7 @@ var renderRunningQueries = (function (queries) {
         link.href = "/queryDetail?queryId=" + queryInfo.queryId;
         link.text = queryInfo.queryId;
         link.style = "color: #337ab7";
+        link.target = "_blank";
         $(queryid_td).append(link);
         $(tr).append(queryid_td);
 
@@ -825,8 +952,8 @@ var kill_query = (function (event) {
     }
 });
 
-var renderDoneQueries = (function (queries) {
-    var tbody = d3.select("#done").select("tbody");
+var renderDoneQueries = (function (queries, table_id) {
+    var tbody = d3.select(table_id).select("tbody");
 
     var rows = tbody.selectAll("tr")
         .data(queries, function (query) {
@@ -946,6 +1073,7 @@ function follow_current_uri_query(queryid){
             }
             create_table("#query-results", data.headers, data.results, false);
             $("#tsv-download").removeAttr("disabled");
+            $("#csv-download").removeAttr("disabled");
             $("#send-ikasan").removeAttr("disabled");
         }
     });
